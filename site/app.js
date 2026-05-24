@@ -12,6 +12,7 @@ const state = {
     sort: "score",
   },
   personal: {},
+  sources: [],
   spotlightMovie: null,
   activeMoods: new Set(),
   previousSort: "score",
@@ -53,9 +54,12 @@ const els = {
   missesList: document.querySelector("#missesList"),
   rebuildButton: document.querySelector("#rebuildButton"),
   buzzButton: document.querySelector("#buzzButton"),
+  festivalBar: document.querySelector("#festivalBar"),
+  appTitle: document.querySelector("#appTitle"),
 };
 
-const themeKey = "sundance-theme-v1";
+const themeKey = "circuit-theme-v1";
+const _oldThemeKey = "sundance-theme-v1";
 
 function isDark() {
   const saved = localStorage.getItem(themeKey);
@@ -70,6 +74,9 @@ function applyTheme(dark) {
 }
 
 function initTheme() {
+  if (!localStorage.getItem(themeKey) && localStorage.getItem(_oldThemeKey)) {
+    localStorage.setItem(themeKey, localStorage.getItem(_oldThemeKey));
+  }
   applyTheme(isDark());
   els.themeToggle.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme !== "dark";
@@ -85,8 +92,10 @@ const personalLabels = {
   seen: "Já vi",
   ignored: "Ignorar",
 };
-const storageKey = "sundance-watch-picker-v1";
-const filtersKey = "sundance-filters-v1";
+const storageKey = "circuit-watch-picker-v1";
+const filtersKey = "circuit-filters-v1";
+const _oldStorageKey = "sundance-watch-picker-v1";
+const _oldFiltersKey = "sundance-filters-v1";
 let undoTimer = null;
 let searchTimer = null;
 const moodRecipes = {
@@ -97,6 +106,7 @@ const moodRecipes = {
   short: { tags: ["Short-ish"], genres: [], runtime: "short", sort: "runtime" },
   winner: { tags: ["Award Winner"], genres: [], runtime: "any", sort: "score" },
   recent: { tags: ["Recent"], genres: [], runtime: "any", sort: "recent" },
+  buzz: { tags: [], genres: [], runtime: "any", sort: "buzz" },
 };
 const genreNames = {
   action: "Ação",
@@ -320,6 +330,9 @@ function setPersonal(movie, value) {
 
 function loadPersonal() {
   try {
+    if (!localStorage.getItem(storageKey) && localStorage.getItem(_oldStorageKey)) {
+      localStorage.setItem(storageKey, localStorage.getItem(_oldStorageKey));
+    }
     state.personal = JSON.parse(localStorage.getItem(storageKey) || "{}");
   } catch {
     state.personal = {};
@@ -333,6 +346,9 @@ function saveFilters() {
 
 function loadFilters() {
   try {
+    if (!localStorage.getItem(filtersKey) && localStorage.getItem(_oldFiltersKey)) {
+      localStorage.setItem(filtersKey, localStorage.getItem(_oldFiltersKey));
+    }
     const saved = JSON.parse(localStorage.getItem(filtersKey) || "{}");
     if (Array.isArray(saved.lists))     state.filters.lists     = saved.lists;
     if (Array.isArray(saved.tags))      state.filters.tags      = saved.tags;
@@ -423,15 +439,26 @@ function applyFilters() {
 
 function renderStats() {
   const total = state.movies.length;
-  const docs = state.movies.filter((movie) => movie.tags.includes("Documentary")).length;
-  const comedy = state.movies.filter((movie) => movie.tags.includes("Comedy") || movie.tags.includes("Dramedy")).length;
   const want = state.movies.filter((movie) => getPersonal(movie) === "want").length;
-  els.stats.innerHTML = [
-    ["Filmes", total],
-    ["Docs", docs],
-    ["Comédia/drama", comedy],
-    ["Quero ver", want],
-  ]
+
+  // Agrupa filmes únicos por festival (via campo festival das sources)
+  const festivalCounts = {};
+  state.sources.forEach((source) => {
+    const key = source.festival || source.list;
+    if (!festivalCounts[key]) festivalCounts[key] = new Set();
+    state.movies
+      .filter((m) => m.lists.includes(source.list))
+      .forEach((m) => festivalCounts[key].add(movieKey(m)));
+  });
+
+  const items = [["Total", total]];
+  Object.entries(festivalCounts).forEach(([festival, keys]) => {
+    items.push([festival, keys.size]);
+  });
+  items.push(["Quero ver", want]);
+
+  els.stats.style.gridTemplateColumns = `repeat(${items.length}, minmax(80px, 1fr))`;
+  els.stats.innerHTML = items
     .map(([label, value]) => `<div class="stat"><strong>${value}</strong><span>${label}</span></div>`)
     .join("");
 }
@@ -469,9 +496,9 @@ function colorFor(movie) {
 }
 
 function filterChipType(movie, chip) {
+  if (movie.lists.includes(chip)) return "list";
   if (movie.tags.includes(chip)) return "tag";
   if (movie.genres.includes(chip)) return "genre";
-  if (movie.lists.includes(chip)) return "list";
   if (chip.startsWith("Idioma: ")) return "language";
   return "search";
 }
@@ -492,7 +519,8 @@ function chipMarkup(movie, chip) {
   const type = filterChipType(movie, chip);
   const active = isFilterActive(type, chip);
   const display = type === "genre" ? genreLabel(chip) : chip;
-  return `<button class="chip ${active ? "is-active" : ""}" type="button" data-filter-type="${type}" data-filter-value="${escapeHtml(chip)}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(display)}</button>`;
+  const extra = type === "list" ? " chip--festival" : "";
+  return `<button class="chip${extra} ${active ? "is-active" : ""}" type="button" data-filter-type="${type}" data-filter-value="${escapeHtml(chip)}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(display)}</button>`;
 }
 
 function toggleArrayValue(values, value) {
@@ -519,6 +547,15 @@ function removeFilter(type, value) {
 
 function isMoodActive(mood) {
   return state.activeMoods.has(mood);
+}
+
+function renderFestivalBar() {
+  if (!els.festivalBar) return;
+  els.festivalBar.querySelectorAll("[data-list]").forEach((btn) => {
+    const active = state.filters.lists.includes(btn.dataset.list);
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
 }
 
 function renderMoodButtons() {
@@ -692,10 +729,10 @@ function renderMovie(movie) {
   node.querySelector(".overview").textContent = movie.overview || "Sem sinopse no Trakt.";
 
   const chipValues = [
+    ...movie.lists,
     ...movie.tags,
     ...movie.genres.slice(0, 3),
     `Idioma: ${languageLabel(movie.language)}`,
-    ...movie.lists.slice(0, 2),
   ];
   node.querySelector(".chips").innerHTML = uniq(chipValues)
     .slice(0, 9)
@@ -764,7 +801,7 @@ function renderSpotlight(movie) {
     <h2>${movie.title}</h2>
     <p class="muted">${movie.year} · ${formatRuntime(movie.runtime)} · ${languageLabel(movie.language)} · ${movie.rating}/10 no Trakt · ${why.join(" · ") || "boa aposta da curadoria"}</p>
     <p>${movie.overview || "Sem sinopse no Trakt."}</p>
-    <div class="chips">${uniq([...movie.tags, ...movie.genres, `Idioma: ${languageLabel(movie.language)}`, ...movie.lists]).slice(0, 10).map((chip) => chipMarkup(movie, chip)).join("")}</div>
+    <div class="chips">${uniq([...movie.lists, ...movie.tags, ...movie.genres, `Idioma: ${languageLabel(movie.language)}`]).slice(0, 10).map((chip) => chipMarkup(movie, chip)).join("")}</div>
     <div class="personal-controls">${Object.entries(personalLabels).map(([value, label]) => `<button class="${personal === value ? "is-selected" : ""}" type="button" data-personal="${value}" aria-pressed="${personal === value ? "true" : "false"}">${label}</button>`).join("")}</div>
     <div class="links">${traktUrl(movie) ? `<a href="${traktUrl(movie)}" target="_blank" rel="noreferrer">Abrir no Trakt</a>` : ""}${imdbUrl(movie) ? `<a href="${imdbUrl(movie)}" target="_blank" rel="noreferrer">IMDb</a>` : ""}</div>
   `;
@@ -799,13 +836,14 @@ function openMovieModal(movie) {
         ${detailRow("Ano", movie.year)}
         ${detailRow("Duração", formatRuntime(movie.runtime))}
         ${detailRow("Nota Trakt", `${movie.rating}/10`)}
+        ${movie.imdb_rating != null ? detailRow("Nota IMDb", `${movie.imdb_rating}/10`) : ""}
         ${movie.buzz_score != null ? detailRow("Buzz", `${movie.buzz_score}/100 ${buzzArrow(movie.buzz_trend)}`) : ""}
         ${detailRow("Votos", movie.votes.toLocaleString("pt-BR"))}
         ${detailRow("País", movie.country ? movie.country.toUpperCase() : "")}
         ${detailRow("Idioma", languageLabel(movie.language))}
       </div>
       <p class="modal-overview">${escapeHtml(movie.overview || "Sem sinopse no Trakt.")}</p>
-      <div class="chips">${uniq([...movie.tags, ...movie.genres, `Idioma: ${languageLabel(movie.language)}`, ...movie.lists]).map((chip) => chipMarkup(movie, chip)).join("")}</div>
+      <div class="chips">${uniq([...movie.lists, ...movie.tags, ...movie.genres, `Idioma: ${languageLabel(movie.language)}`]).map((chip) => chipMarkup(movie, chip)).join("")}</div>
       <div class="personal-controls modal-personal">${Object.entries(personalLabels).map(([value, label]) => `<button class="${personal === value ? "is-selected" : ""}" type="button" data-personal="${value}" aria-pressed="${personal === value ? "true" : "false"}">${label}</button>`).join("")}</div>
       <div class="links modal-links">${links.join("")}</div>
     </div>
@@ -946,6 +984,7 @@ function renderGrid() {
 
 function render() {
   els.count.textContent = `${state.filtered.length} filme(s) no recorte atual`;
+  renderFestivalBar();
   renderMoodButtons();
   renderActiveFilters();
   renderSelectionPanel();
@@ -1084,6 +1123,28 @@ function bind() {
     }
   });
 
+  // Clicar em "Circuit" reseta todos os filtros
+  if (els.appTitle) {
+    const doReset = () => {
+      state.filters = { search: "", lists: [], tags: [], genres: [], languages: [], runtime: "any", personal: "active", sort: "score" };
+      state.activeMoods.clear();
+      state.previousSort = "score";
+      localStorage.removeItem(filtersKey);
+      els.search.value = "";
+      els.list.value = "all";
+      els.tag.value = "all";
+      els.genre.value = "all";
+      els.language.value = "all";
+      els.runtime.value = "any";
+      els.personalFilter.value = "active";
+      els.sort.value = "score";
+      renderSpotlight(null);
+      applyFilters();
+    };
+    els.appTitle.addEventListener("click", doReset);
+    els.appTitle.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); doReset(); } });
+  }
+
   els.reset.addEventListener("click", () => {
     state.filters = { search: "", lists: [], tags: [], genres: [], languages: [], runtime: "any", personal: "active", sort: "score" };
     state.activeMoods.clear();
@@ -1115,6 +1176,7 @@ async function loadBuzz() {
       const b = map[m.trakt];
       m.buzz_score = b ? b.buzz_score : null;
       m.buzz_trend = b ? b.trend : null;
+      m.imdb_rating = b ? (b.imdb_rating ?? null) : null;
     });
   } catch {
     // buzz.json ainda não existe — normal na primeira execução
@@ -1151,6 +1213,16 @@ async function boot() {
   loadFilters();
   await syncFromTrakt(payload.movies);
   state.movies = payload.movies;
+  state.sources = payload.sources || [];
+  // Gera botões da festival bar
+  if (els.festivalBar && state.sources.length) {
+    els.festivalBar.innerHTML = state.sources
+      .map((s) => `<button type="button" data-list="${escapeHtml(s.list)}" aria-pressed="false">${escapeHtml(s.label || s.list)}</button>`)
+      .join("");
+    els.festivalBar.querySelectorAll("[data-list]").forEach((btn) => {
+      btn.addEventListener("click", () => toggleFilter("list", btn.dataset.list));
+    });
+  }
   await loadBuzz();
   if (payload.generated_at && els.dataFreshness) {
     const date = payload.generated_at.slice(0, 10);

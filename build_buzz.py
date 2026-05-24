@@ -84,6 +84,18 @@ def fetch_news_count(title, year):
         return 0
 
 
+def fetch_imdb_rating(imdb_id):
+    api_key = os.environ.get("OMDB_API_KEY")
+    if not api_key or not imdb_id:
+        return None
+    try:
+        data = json.loads(_get(f"http://www.omdbapi.com/?i={imdb_id}&apikey={api_key}"))
+        rating = data.get("imdbRating")
+        return float(rating) if rating and rating != "N/A" else None
+    except Exception:
+        return None
+
+
 def fetch_reddit_count(title):
     q = urllib.parse.quote(f'"{title}"')
     url = f"https://www.reddit.com/search.json?q={q}&sort=new&t=month&limit=25&type=link"
@@ -132,9 +144,11 @@ def main():
         year = movie.get("year")
         trakt_id = movie.get("trakt") or movie.get("slug")
         tmdb_id = movie.get("tmdb")
+        imdb_id = movie.get("imdb")
 
         watchers = fetch_trakt_watchers(trakt_id)
         tmdb_pop = fetch_tmdb_popularity(tmdb_id)
+        imdb_rating = fetch_imdb_rating(imdb_id)
         time.sleep(0.3)
         news = fetch_news_count(title, year)
         time.sleep(0.3)
@@ -145,6 +159,8 @@ def main():
             "trakt": movie.get("trakt"),
             "title": title,
             "year": year,
+            "imdb": imdb_id,
+            "imdb_rating": imdb_rating,
             "watchers": watchers,
             "tmdb_popularity": tmdb_pop,
             "news_count": news,

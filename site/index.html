@@ -11,7 +11,7 @@
       <section class="topbar">
         <div>
           <p class="eyebrow">Trakt + Festivais</p>
-          <h1>Circuit</h1>
+          <h1 id="appTitle" role="button" tabindex="0" title="Limpar filtros e voltar ao início">Circuit</h1>
         </div>
         <div class="topbar-right">
           <p class="data-freshness" id="dataFreshness"></p>
@@ -37,6 +37,8 @@
         <p id="countLabel"></p>
       </section>
 
+      <nav class="festival-bar" id="festivalBar" aria-label="Filtrar por festival"></nav>
+
       <section class="moodbar" id="moodBar" aria-label="Atalhos de intenção">
         <button type="button" data-mood="laugh">Quero rir</button>
         <button type="button" data-mood="light">Algo leve</button>
@@ -45,6 +47,7 @@
         <button type="button" data-mood="short">Curto hoje</button>
         <button type="button" data-mood="winner">Premiado</button>
         <button type="button" data-mood="recent">Recente</button>
+        <button type="button" data-mood="buzz">Em alta</button>
       </section>
 
       <section class="controls" aria-label="Filtros">
