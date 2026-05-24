@@ -22,32 +22,8 @@ MANUAL_TRAKT_IDS = {
     ("crumb", 1994): 16173,
 }
 
-SOURCES = [
-    {
-        "file": "sundance_2026_movies.csv",
-        "list": "Sundance 2026 Feature Program",
-        "slug": "sundance-2026-feature-film-program",
-        "theme": "New Festival",
-    },
-    {
-        "file": "sundance_winners_2022_2026.csv",
-        "list": "Sundance Winners 2022-2026",
-        "slug": "sundance-winners-2022-2026",
-        "theme": "Award Winners",
-    },
-    {
-        "file": "sundance_indie_comedy_dramedy.csv",
-        "list": "Sundance Indie Comedy & Dramedy",
-        "slug": "sundance-indie-comedy-dramedy",
-        "theme": "Comedy & Dramedy",
-    },
-    {
-        "file": "sundance_documentary_essentials.csv",
-        "list": "Sundance Documentary Essentials",
-        "slug": "sundance-documentary-essentials",
-        "theme": "Documentary",
-    },
-]
+_sources_file = Path(__file__).parent / "sources.json"
+SOURCES = json.loads(_sources_file.read_text(encoding="utf-8")) if _sources_file.exists() else []
 
 
 def headers():
@@ -162,6 +138,8 @@ def get_movie_by_id(trakt_id):
     return get_json(f"/movies/{trakt_id}?extended=full")
 
 
+_SPECIAL_THEMES = {"Award Winners", "Comedy & Dramedy", "Documentary", "New Festival"}
+
 def classify(movie, item):
     genres = set(movie.get("genres") or [])
     themes = set(item["themes"])
@@ -176,6 +154,10 @@ def classify(movie, item):
         tags.append("Award Winner")
     if "New Festival" in themes:
         tags.append("2026 Program")
+    # Qualquer tema não especial vira tag diretamente (ex: "SXSW 2026", "TIFF 2025")
+    for theme in themes:
+        if theme not in _SPECIAL_THEMES and theme not in tags:
+            tags.append(theme)
     if "romance" in genres:
         tags.append("Romance")
     if movie.get("runtime") and movie["runtime"] <= 90:

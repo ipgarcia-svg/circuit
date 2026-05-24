@@ -15,6 +15,7 @@ const state = {
   spotlightMovie: null,
   activeMoods: new Set(),
   previousSort: "score",
+  recentPicks: [],
 };
 
 const els = {
@@ -47,6 +48,10 @@ const els = {
   syncBannerClose: document.querySelector("#syncBannerClose"),
   themeToggle: document.querySelector("#themeToggle"),
   dataFreshness: document.querySelector("#dataFreshness"),
+  missesPanel: document.querySelector("#missesPanel"),
+  missesCount: document.querySelector("#missesCount"),
+  missesList: document.querySelector("#missesList"),
+  rebuildButton: document.querySelector("#rebuildButton"),
 };
 
 const themeKey = "sundance-theme-v1";
@@ -855,13 +860,21 @@ function pickMovie() {
     renderSpotlight(null);
     return;
   }
-  const pool = candidates
+  let pool = candidates
     .map((movie) => ({ movie, score: scoreForPick(movie, mode) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, Math.min(mode === "surprise" ? 80 : 35, candidates.length))
     .map((entry) => entry.movie);
-  const index = Math.floor(Math.random() * pool.length);
-  renderSpotlight(pool[index]);
+
+  // Evita repetir os últimos picks; reseta o histórico se o pool ficar vazio
+  const recent = new Set(state.recentPicks);
+  const fresh = pool.filter((m) => !recent.has(movieKey(m)));
+  if (fresh.length) pool = fresh;
+  else state.recentPicks = [];
+
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  state.recentPicks = [...state.recentPicks.slice(-4), movieKey(pick)];
+  renderSpotlight(pick);
 }
 
 function setMood(mood) {
@@ -996,6 +1009,38 @@ function bind() {
   els.syncBannerClose.addEventListener("click", () => {
     els.syncBanner.hidden = true;
   });
+
+  els.rebuildButton.addEventListener("click", async () => {
+    els.rebuildButton.disabled = true;
+    els.rebuildButton.textContent = "Atualizando…";
+    try {
+      const res = await fetch("/api/rebuild", { method: "POST" });
+      if (!res.ok) { showSyncBanner("Não foi possível iniciar a atualização."); return; }
+      const poll = setInterval(async () => {
+        const s = await fetch("/api/rebuild-status").then((r) => r.json());
+        if (s.state === "running") return;
+        clearInterval(poll);
+        els.rebuildButton.disabled = false;
+        els.rebuildButton.textContent = "Atualizar dados";
+        if (s.state === "done") {
+          const response = await fetch("movies.json");
+          const payload = await response.json();
+          state.movies = payload.movies;
+          if (payload.generated_at && els.dataFreshness) {
+            els.dataFreshness.textContent = `Dados de ${payload.generated_at.slice(0, 10)}`;
+          }
+          applyFilters();
+          renderStats();
+        } else {
+          showSyncBanner(`Erro ao atualizar: ${s.message}`);
+        }
+      }, 3000);
+    } catch {
+      els.rebuildButton.disabled = false;
+      els.rebuildButton.textContent = "Atualizar dados";
+      showSyncBanner("Sem conexão com o servidor local.");
+    }
+  });
   els.reset.addEventListener("click", () => {
     state.filters = { search: "", lists: [], tags: [], genres: [], languages: [], runtime: "any", personal: "active", sort: "score" };
     state.activeMoods.clear();
@@ -1047,6 +1092,13 @@ async function boot() {
   if (payload.generated_at && els.dataFreshness) {
     const date = payload.generated_at.slice(0, 10);
     els.dataFreshness.textContent = `Dados de ${date}`;
+  }
+  if (Array.isArray(payload.misses) && payload.misses.length) {
+    els.missesCount.textContent = payload.misses.length;
+    els.missesList.innerHTML = payload.misses
+      .map((m) => `<li>${escapeHtml(m.input_title || m.title || "?")} (${escapeHtml(String(m.input_year || m.year || ""))})${m.reason ? ` — ${escapeHtml(m.reason)}` : ""}</li>`)
+      .join("");
+    els.missesPanel.hidden = false;
   }
   optionize(els.list, uniq(state.movies.flatMap((movie) => movie.lists)), "Adicionar lista");
   optionize(els.tag, uniq(state.movies.flatMap((movie) => movie.tags)), "Adicionar categoria");

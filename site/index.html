@@ -32,6 +32,7 @@
         </select>
         <div class="actions-sep"></div>
         <button id="resetButton" type="button">Limpar filtros</button>
+        <button id="rebuildButton" type="button">Atualizar dados</button>
         <p id="countLabel"></p>
       </section>
 
@@ -105,6 +106,11 @@
       <section class="breakdown" id="breakdown"></section>
 
       <section class="grid" id="movieGrid"></section>
+
+      <details class="misses-panel" id="missesPanel" hidden>
+        <summary>Filmes não encontrados no Trakt (<span id="missesCount">0</span>)</summary>
+        <ul id="missesList"></ul>
+      </details>
     </main>
 
     <div class="modal-backdrop" id="movieModal" hidden>

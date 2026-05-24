@@ -21,6 +21,8 @@ Uso:
 import json
 import mimetypes
 import os
+import subprocess
+import threading
 import urllib.error
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
@@ -28,9 +30,32 @@ from pathlib import Path
 
 import trakt_client
 
-PORT     = 8787
-SITE_DIR = Path(__file__).parent / "site"
-SLUG_FILE = Path(__file__).parent / ".trakt_list_slug"
+PORT        = 8787
+PROJECT_DIR = Path(__file__).parent
+SITE_DIR    = PROJECT_DIR / "site"
+SLUG_FILE   = PROJECT_DIR / ".trakt_list_slug"
+
+_rebuild_lock   = threading.Lock()
+_rebuild_status = {"state": "idle", "message": ""}
+
+
+def _run_rebuild():
+    global _rebuild_status
+    script = PROJECT_DIR / "build_trakt_site_data.py"
+    try:
+        result = subprocess.run(
+            ["python3", str(script)],
+            capture_output=True, text=True, timeout=300,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        )
+        if result.returncode == 0:
+            _rebuild_status = {"state": "done", "message": result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "Concluído."}
+        else:
+            _rebuild_status = {"state": "error", "message": result.stderr.strip() or "Erro desconhecido."}
+    except subprocess.TimeoutExpired:
+        _rebuild_status = {"state": "error", "message": "Timeout após 5 minutos."}
+    except Exception as exc:
+        _rebuild_status = {"state": "error", "message": str(exc)}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -57,6 +82,10 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_get_want()
             return
 
+        if path == "/api/rebuild-status":
+            self._respond(200, "application/json", json.dumps(_rebuild_status).encode())
+            return
+
         if path == "/":
             path = "/index.html"
 
@@ -80,6 +109,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _handle_rebuild(self):
+        global _rebuild_status
+        if not _rebuild_lock.acquire(blocking=False):
+            self._respond(409, "application/json", json.dumps({"error": "already running"}).encode())
+            return
+        _rebuild_status = {"state": "running", "message": "Buscando dados no Trakt…"}
+        t = threading.Thread(target=lambda: (_run_rebuild(), _rebuild_lock.release()), daemon=True)
+        t.start()
+        self._respond(202, "application/json", json.dumps({"ok": True}).encode())
+
     def _handle_get_want(self):
         token = trakt_client.load_token()
         if not token:
@@ -101,6 +140,10 @@ class Handler(BaseHTTPRequestHandler):
             self._respond(502, "application/json", json.dumps({"error": str(exc)}).encode())
 
     def do_POST(self):
+        if self.path == "/api/rebuild":
+            self._handle_rebuild()
+            return
+
         if self.path != "/api/want":
             self._respond(404, "application/json", json.dumps({"error": "not found"}).encode())
             return
@@ -158,8 +201,8 @@ class Handler(BaseHTTPRequestHandler):
 # ── entry point ───────────────────────────────────────────────────────────────
 
 def main():
-    if not TOKEN_FILE.exists():
-        print(f"\n  AVISO: {TOKEN_FILE} não encontrado — sincronização com Trakt desativada.")
+    if not trakt_client.TOKEN_FILE.exists():
+        print(f"\n  AVISO: {trakt_client.TOKEN_FILE} não encontrado — sincronização com Trakt desativada.")
     if not os.environ.get("TRAKT_CLIENT_ID"):
         print("\n  AVISO: TRAKT_CLIENT_ID não definido — algumas chamadas ao Trakt podem falhar.")
     slug = get_list_slug()

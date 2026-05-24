@@ -10,22 +10,20 @@ O que este script faz:
   4. Salva o slug em .trakt_list_slug (usado pelo server.py)
 
 Pré-requisitos:
-  • .trakt_token.json válido na raiz do projeto
-  • TRAKT_CLIENT_ID exportado no ambiente (obrigatório):
-      export TRAKT_CLIENT_ID=<seu_client_id>
+  • .trakt_token.json válido na raiz do projeto (gerado por get_token.py)
+  • TRAKT_CLIENT_ID no ambiente ou no .env
 
 Uso:
   python3 setup_trakt.py
 """
 
-import json
 import os
 import sys
 import urllib.error
 import urllib.parse
 from pathlib import Path
 
-import trakt_client
+import trakt_client  # também carrega o .env automaticamente
 
 SLUG_FILE      = Path(__file__).parent / ".trakt_list_slug"
 SLUG_TO_DELETE = "sundance-2026-feature-film-program"
@@ -44,25 +42,26 @@ def request_json(method, path, *, token, body=None):
         raise RuntimeError(f"Trakt HTTP {exc.code}: {details}") from exc
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
-
-def main() -> int:
-    # Credenciais
+def main():
     client_id = os.environ.get("TRAKT_CLIENT_ID")
     if not client_id:
         print(
             "ERRO: TRAKT_CLIENT_ID não definido.\n"
-            "  export TRAKT_CLIENT_ID=<seu_client_id>",
+            "  Adicione ao .env ou exporte antes de rodar.",
             file=sys.stderr,
         )
         return 2
 
     token = trakt_client.load_token()
     if not token:
-        print(f"ERRO: {trakt_client.TOKEN_FILE} não encontrado ou inválido.", file=sys.stderr)
+        print(
+            f"ERRO: {trakt_client.TOKEN_FILE} não encontrado.\n"
+            "  Rode primeiro: python3 get_token.py",
+            file=sys.stderr,
+        )
         return 2
 
-    # ── 1. listar listas atuais ───────────────────────────────────────────────
+    # 1. listar listas atuais
     print("\nBuscando suas listas no Trakt…")
     lists = request_json("GET", "/users/me/lists", token=token)
     print(f"  {len(lists)} lista(s) encontrada(s):")
@@ -70,16 +69,16 @@ def main() -> int:
         print(f"    · {lst['name']}  (slug: {lst['ids']['slug']})")
 
     # Verifica se "Quero ver" já existe
-    existing_want = next((l for l in lists if l["name"].lower() == NEW_LIST_NAME.lower()), None)
-    if existing_want:
-        slug = existing_want["ids"]["slug"]
+    existing = next((l for l in lists if l["name"].lower() == NEW_LIST_NAME.lower()), None)
+    if existing:
+        slug = existing["ids"]["slug"]
         print(f'\n  A lista "{NEW_LIST_NAME}" já existe (slug: {slug}).')
         SLUG_FILE.write_text(slug, encoding="utf-8")
         print(f"  Slug salvo em {SLUG_FILE.name}")
         print(f"\n  Pronto → https://trakt.tv/users/me/lists/{slug}\n")
         return 0
 
-    # ── 2. deletar lista antiga (opcional) ────────────────────────────────────
+    # 2. deletar lista antiga (opcional)
     target = next((l for l in lists if l["ids"]["slug"] == SLUG_TO_DELETE), None)
     if target:
         print(f'\n  Encontrada lista para substituir: "{target["name"]}" (slug: {SLUG_TO_DELETE})')
@@ -89,20 +88,20 @@ def main() -> int:
                 "DELETE",
                 f"/users/me/lists/{urllib.parse.quote(SLUG_TO_DELETE)}",
                 token=token,
-                            )
+            )
             print(f'  ✓ Lista "{target["name"]}" deletada.')
         else:
-            print("  Pulando deleção — se você atingiu o limite de listas, a criação abaixo pode falhar.")
+            print("  Pulando deleção — se atingiu o limite de listas, a criação abaixo pode falhar.")
     else:
-        print(f'\n  Lista com slug "{SLUG_TO_DELETE}" não encontrada — nenhuma deleção necessária.')
+        print(f'\n  Lista "{SLUG_TO_DELETE}" não encontrada — nenhuma deleção necessária.')
 
-    # ── 3. criar "Quero ver" ──────────────────────────────────────────────────
+    # 3. criar "Quero ver"
     print(f'\nCriando lista "{NEW_LIST_NAME}"…')
     created = request_json(
         "POST",
         "/users/me/lists",
         token=token,
-                body={
+        body={
             "name":            NEW_LIST_NAME,
             "description":     NEW_LIST_DESC,
             "privacy":         "private",

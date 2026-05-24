@@ -223,14 +223,22 @@ h1 {
   margin: 0 4px;
 }
 
-#resetButton {
+#resetButton,
+#rebuildButton {
   background: var(--panel);
   color: var(--muted);
   border-color: var(--line);
 }
 
+#rebuildButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 #resetButton:hover,
-#resetButton:focus-visible {
+#resetButton:focus-visible,
+#rebuildButton:not(:disabled):hover,
+#rebuildButton:not(:disabled):focus-visible {
   color: var(--ink);
   border-color: color-mix(in srgb, var(--muted), white 40%);
   outline: none;
@@ -917,6 +925,39 @@ h1 {
   color: var(--ink);
   cursor: pointer;
   font-weight: 800;
+}
+
+.misses-panel {
+  margin-top: 28px;
+  padding: 12px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.misses-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--muted);
+  list-style: none;
+}
+
+.misses-panel summary::-webkit-details-marker { display: none; }
+
+.misses-panel summary::before {
+  content: "▶ ";
+  font-size: 0.7rem;
+}
+
+details[open].misses-panel summary::before {
+  content: "▼ ";
+}
+
+.misses-panel ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  line-height: 1.8;
 }
 
 .sync-banner {
