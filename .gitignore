@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local secrets and machine-specific Trakt setup
+.env
+.trakt_token.json
+.trakt_list_slug
+
+# Temporary/local runtime files
+*.log
