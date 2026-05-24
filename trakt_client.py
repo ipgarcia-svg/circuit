@@ -63,7 +63,7 @@ def load_token():
     # Renova se expirar em menos de 7 dias
     created_at = data.get("created_at", 0)
     expires_in = data.get("expires_in", 7776000)
-    if time.time() > created_at + expires_in - 7 * 86400:
+    if time.time() > created_at + expires_in - 86400:
         refreshed = _refresh(data)
         if refreshed:
             return refreshed
