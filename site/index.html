@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Circuit</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">Trakt + Festivais</p>
+          <h1>Circuit</h1>
+        </div>
+        <div class="stats" id="stats"></div>
+      </section>
+
+      <section class="spotlight" id="spotlight" aria-live="polite"></section>
+
+      <section class="actions">
+        <button id="pickButton" type="button">Escolher um filme</button>
+        <select id="pickMode" aria-label="Modo de escolha">
+          <option value="safe">Seguro</option>
+          <option value="surprise">Surpresa</option>
+          <option value="short">Curto</option>
+          <option value="want">Só Quero ver</option>
+        </select>
+        <div class="actions-sep"></div>
+        <button id="resetButton" type="button">Limpar filtros</button>
+        <p id="countLabel"></p>
+      </section>
+
+      <section class="moodbar" id="moodBar" aria-label="Atalhos de intenção">
+        <button type="button" data-mood="laugh">Quero rir</button>
+        <button type="button" data-mood="light">Algo leve</button>
+        <button type="button" data-mood="doc">Doc forte</button>
+        <button type="button" data-mood="weird">Estranho</button>
+        <button type="button" data-mood="short">Curto hoje</button>
+        <button type="button" data-mood="winner">Premiado</button>
+        <button type="button" data-mood="recent">Recente</button>
+      </section>
+
+      <section class="controls" aria-label="Filtros">
+        <label class="field field-wide">
+          <span>Buscar</span>
+          <input id="search" type="search" placeholder="Título, gênero, lista..." />
+        </label>
+        <label class="field">
+          <span>Lista</span>
+          <select id="listFilter"></select>
+        </label>
+        <label class="field">
+          <span>Categoria</span>
+          <select id="tagFilter"></select>
+        </label>
+        <label class="field">
+          <span>Gênero</span>
+          <select id="genreFilter"></select>
+        </label>
+        <label class="field">
+          <span>Idioma</span>
+          <select id="languageFilter"></select>
+        </label>
+        <label class="field">
+          <span>Duração</span>
+          <select id="runtimeFilter">
+            <option value="any">Qualquer</option>
+            <option value="short">Até 90 min</option>
+            <option value="medium">91-120 min</option>
+            <option value="long">Mais de 120 min</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Ordenar</span>
+          <select id="sortFilter">
+            <option value="score">Melhor aposta</option>
+            <option value="rating">Nota Trakt</option>
+            <option value="recent">Mais recentes</option>
+            <option value="runtime">Mais curtos</option>
+            <option value="title">Título</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Mostrar</span>
+          <select id="personalFilter">
+            <option value="active">Disponíveis</option>
+            <option value="all">Todos</option>
+            <option value="want">Quero ver</option>
+            <option value="maybe">Talvez</option>
+            <option value="seen">Já vistos</option>
+            <option value="ignored">Ignorados</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="active-filters" id="activeFilters" aria-live="polite"></section>
+
+      <section class="selection-panel" id="selectionPanel"></section>
+
+      <section class="breakdown" id="breakdown"></section>
+
+      <section class="grid" id="movieGrid"></section>
+    </main>
+
+    <div class="modal-backdrop" id="movieModal" hidden>
+      <section class="movie-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <button class="modal-close" id="modalClose" type="button" aria-label="Fechar">×</button>
+        <div class="modal-content" id="modalContent"></div>
+      </section>
+    </div>
+
+    <div class="undo-toast" id="undoToast" hidden></div>
+
+    <template id="movieCardTemplate">
+      <article class="movie-card" tabindex="0">
+        <div class="poster-mark" aria-hidden="true">
+          <img alt="" loading="lazy" />
+          <span></span>
+        </div>
+        <div class="movie-body">
+          <div class="movie-title-row">
+            <h2></h2>
+            <span class="year"></span>
+          </div>
+          <p class="meta"></p>
+          <p class="overview"></p>
+          <div class="chips"></div>
+          <div class="links"></div>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
