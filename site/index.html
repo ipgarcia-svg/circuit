@@ -13,7 +13,11 @@
           <p class="eyebrow">Trakt + Festivais</p>
           <h1>Circuit</h1>
         </div>
-        <div class="stats" id="stats"></div>
+        <div class="topbar-right">
+          <p class="data-freshness" id="dataFreshness"></p>
+          <div class="stats" id="stats"></div>
+        </div>
+        <button id="themeToggle" type="button" aria-label="Alternar tema"></button>
       </section>
 
       <section class="spotlight" id="spotlight" aria-live="polite"></section>
@@ -111,6 +115,11 @@
     </div>
 
     <div class="undo-toast" id="undoToast" hidden></div>
+
+    <div class="sync-banner" id="syncBanner" hidden>
+      <span id="syncBannerMsg"></span>
+      <button type="button" id="syncBannerClose" aria-label="Fechar">×</button>
+    </div>
 
     <template id="movieCardTemplate">
       <article class="movie-card" tabindex="0">

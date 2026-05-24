@@ -42,7 +42,35 @@ const els = {
   modalClose: document.querySelector("#modalClose"),
   modalContent: document.querySelector("#modalContent"),
   undoToast: document.querySelector("#undoToast"),
+  syncBanner: document.querySelector("#syncBanner"),
+  syncBannerMsg: document.querySelector("#syncBannerMsg"),
+  syncBannerClose: document.querySelector("#syncBannerClose"),
+  themeToggle: document.querySelector("#themeToggle"),
+  dataFreshness: document.querySelector("#dataFreshness"),
 };
+
+const themeKey = "sundance-theme-v1";
+
+function isDark() {
+  const saved = localStorage.getItem(themeKey);
+  if (saved) return saved === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function applyTheme(dark) {
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  els.themeToggle.textContent = dark ? "☀︎" : "☾";
+  els.themeToggle.setAttribute("aria-label", dark ? "Mudar para tema claro" : "Mudar para tema escuro");
+}
+
+function initTheme() {
+  applyTheme(isDark());
+  els.themeToggle.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme !== "dark";
+    localStorage.setItem(themeKey, next ? "dark" : "light");
+    applyTheme(next);
+  });
+}
 
 const palette = ["#27717a", "#a85240", "#506b4e", "#b1842f", "#684d73", "#395f8f"];
 const personalLabels = {
@@ -239,14 +267,29 @@ function showUndo(movie, previous, next) {
   }, 4000);
 }
 
-// Fire-and-forget: sincroniza o estado "Quero ver" com a lista no Trakt.
-// O localStorage é a fonte de verdade — erros de rede são silenciosos.
+function showSyncBanner(message) {
+  els.syncBannerMsg.textContent = message;
+  els.syncBanner.hidden = false;
+}
+
+// Sincroniza o estado "Quero ver" com a lista no Trakt.
+// O localStorage é a fonte de verdade; erros de rede mostram um aviso.
 function syncWant(traktId, action) {
   fetch("/api/want", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ trakt_id: traktId, action }),
-  }).catch(() => {});
+  })
+    .then((res) => {
+      if (res.status === 401 || res.status === 500) {
+        showSyncBanner("Token do Trakt expirado ou inválido. Rode setup_trakt.py para renovar.");
+      } else if (!res.ok) {
+        showSyncBanner(`Falha ao sincronizar com o Trakt (HTTP ${res.status}).`);
+      }
+    })
+    .catch(() => {
+      showSyncBanner("Sem conexão com o servidor local. O Circuit está rodando?");
+    });
 }
 
 function setPersonal(movie, value) {
@@ -950,6 +993,9 @@ function bind() {
       }
     }
   });
+  els.syncBannerClose.addEventListener("click", () => {
+    els.syncBanner.hidden = true;
+  });
   els.reset.addEventListener("click", () => {
     state.filters = { search: "", lists: [], tags: [], genres: [], languages: [], runtime: "any", personal: "active", sort: "score" };
     state.activeMoods.clear();
@@ -968,13 +1014,40 @@ function bind() {
   });
 }
 
+async function syncFromTrakt(movies) {
+  try {
+    const res = await fetch("/api/want");
+    if (!res.ok) return;
+    const { trakt_ids } = await res.json();
+    if (!Array.isArray(trakt_ids)) return;
+    const traktSet = new Set(trakt_ids);
+    movies.forEach((movie) => {
+      if (!movie.trakt) return;
+      const current = getPersonal(movie);
+      if (traktSet.has(movie.trakt) && !current) {
+        writePersonal(movie, "want");
+      } else if (!traktSet.has(movie.trakt) && current === "want") {
+        writePersonal(movie, "");
+      }
+    });
+  } catch {
+    // servidor não disponível — segue com o localStorage
+  }
+}
+
 async function boot() {
+  initTheme();
   els.grid.innerHTML = `<div class="empty-state loading-state"><strong>Carregando filmes…</strong></div>`;
   const response = await fetch("movies.json");
   const payload = await response.json();
   loadPersonal();
   loadFilters();
+  await syncFromTrakt(payload.movies);
   state.movies = payload.movies;
+  if (payload.generated_at && els.dataFreshness) {
+    const date = payload.generated_at.slice(0, 10);
+    els.dataFreshness.textContent = `Dados de ${date}`;
+  }
   optionize(els.list, uniq(state.movies.flatMap((movie) => movie.lists)), "Adicionar lista");
   optionize(els.tag, uniq(state.movies.flatMap((movie) => movie.tags)), "Adicionar categoria");
   optionizeGenres(els.genre, uniq(state.movies.flatMap((movie) => movie.genres)), "Adicionar gênero");

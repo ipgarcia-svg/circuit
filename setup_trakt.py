@@ -23,17 +23,12 @@ import os
 import sys
 import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
 
-PROJECT_DIR    = Path(__file__).parent
-TOKEN_FILE     = PROJECT_DIR / ".trakt_token.json"
-SLUG_FILE      = PROJECT_DIR / ".trakt_list_slug"
-API_BASE       = "https://api.trakt.tv"
+import trakt_client
 
-# Slug da lista a ser substituída (ajuste se necessário)
+SLUG_FILE      = Path(__file__).parent / ".trakt_list_slug"
 SLUG_TO_DELETE = "sundance-2026-feature-film-program"
-
 NEW_LIST_NAME  = "Quero ver"
 NEW_LIST_DESC  = (
     "Filmes de festivais que quero assistir, "
@@ -41,23 +36,9 @@ NEW_LIST_DESC  = (
 )
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-def request_json(method, path, *, token, client_id=None, body=None):
-    headers = {
-        "Content-Type":      "application/json",
-        "User-Agent":        "Circuit Setup/1.0",
-        "trakt-api-version": "2",
-        "Authorization":     f"Bearer {token}",
-    }
-    if client_id:
-        headers["trakt-api-key"] = client_id
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req  = urllib.request.Request(API_BASE + path, data=data, headers=headers, method=method)
+def request_json(method, path, *, token, body=None):
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            text = r.read().decode("utf-8")
-            return json.loads(text) if text else {}
+        return trakt_client.call(method, path, token=token, body=body)
     except urllib.error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Trakt HTTP {exc.code}: {details}") from exc
@@ -76,16 +57,14 @@ def main() -> int:
         )
         return 2
 
-    if not TOKEN_FILE.exists():
-        print(f"ERRO: {TOKEN_FILE} não encontrado.", file=sys.stderr)
+    token = trakt_client.load_token()
+    if not token:
+        print(f"ERRO: {trakt_client.TOKEN_FILE} não encontrado ou inválido.", file=sys.stderr)
         return 2
-
-    token_data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
-    token      = token_data["access_token"]
 
     # ── 1. listar listas atuais ───────────────────────────────────────────────
     print("\nBuscando suas listas no Trakt…")
-    lists = request_json("GET", "/users/me/lists", token=token, client_id=client_id)
+    lists = request_json("GET", "/users/me/lists", token=token)
     print(f"  {len(lists)} lista(s) encontrada(s):")
     for lst in lists:
         print(f"    · {lst['name']}  (slug: {lst['ids']['slug']})")
@@ -110,8 +89,7 @@ def main() -> int:
                 "DELETE",
                 f"/users/me/lists/{urllib.parse.quote(SLUG_TO_DELETE)}",
                 token=token,
-                client_id=client_id,
-            )
+                            )
             print(f'  ✓ Lista "{target["name"]}" deletada.')
         else:
             print("  Pulando deleção — se você atingiu o limite de listas, a criação abaixo pode falhar.")
@@ -124,8 +102,7 @@ def main() -> int:
         "POST",
         "/users/me/lists",
         token=token,
-        client_id=client_id,
-        body={
+                body={
             "name":            NEW_LIST_NAME,
             "description":     NEW_LIST_DESC,
             "privacy":         "private",

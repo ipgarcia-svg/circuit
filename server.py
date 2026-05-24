@@ -23,49 +23,22 @@ import mimetypes
 import os
 import urllib.error
 import urllib.parse
-import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 
-PORT = 8787
-PROJECT_DIR = Path(__file__).parent
-SITE_DIR    = PROJECT_DIR / "site"
-TOKEN_FILE  = PROJECT_DIR / ".trakt_token.json"
-SLUG_FILE   = PROJECT_DIR / ".trakt_list_slug"
-API_BASE    = "https://api.trakt.tv"
+import trakt_client
+
+PORT     = 8787
+SITE_DIR = Path(__file__).parent / "site"
+SLUG_FILE = Path(__file__).parent / ".trakt_list_slug"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-def load_token():
-    try:
-        data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
-        return data.get("access_token")
-    except Exception:
-        return None
-
 
 def get_list_slug() -> str:
     if SLUG_FILE.exists():
         return SLUG_FILE.read_text(encoding="utf-8").strip()
     return os.environ.get("TRAKT_LIST_SLUG", "quero-ver")
-
-
-def trakt_call(method, path, *, token, body=None):
-    client_id = os.environ.get("TRAKT_CLIENT_ID")
-    headers = {
-        "Content-Type":    "application/json",
-        "User-Agent":      "Circuit/1.0",
-        "trakt-api-version": "2",
-        "Authorization":   f"Bearer {token}",
-    }
-    if client_id:
-        headers["trakt-api-key"] = client_id
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req  = urllib.request.Request(API_BASE + path, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        text = r.read().decode("utf-8")
-        return json.loads(text) if text else {}
 
 
 # ── request handler ───────────────────────────────────────────────────────────
@@ -75,10 +48,15 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"  {self.address_string()}  {fmt % args}")
 
-    # ── static files ──────────────────────────────────────────────────────────
+    # ── API ───────────────────────────────────────────────────────────────────
 
     def do_GET(self):
         path = self.path.split("?")[0]
+
+        if path == "/api/want":
+            self._handle_get_want()
+            return
+
         if path == "/":
             path = "/index.html"
 
@@ -102,7 +80,25 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    # ── API ───────────────────────────────────────────────────────────────────
+    def _handle_get_want(self):
+        token = trakt_client.load_token()
+        if not token:
+            self._respond(500, "application/json", json.dumps({"error": "no token"}).encode())
+            return
+        slug = get_list_slug()
+        try:
+            items = trakt_client.call("GET", f"/users/me/lists/{urllib.parse.quote(slug)}/items/movies", token=token)
+            trakt_ids = [
+                item["movie"]["ids"]["trakt"]
+                for item in items
+                if item.get("movie", {}).get("ids", {}).get("trakt")
+            ]
+            self._respond(200, "application/json", json.dumps({"trakt_ids": trakt_ids}).encode())
+        except urllib.error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace")
+            self._respond(exc.code, "application/json", json.dumps({"error": details}).encode())
+        except Exception as exc:
+            self._respond(502, "application/json", json.dumps({"error": str(exc)}).encode())
 
     def do_POST(self):
         if self.path != "/api/want":
@@ -125,7 +121,7 @@ class Handler(BaseHTTPRequestHandler):
                 json.dumps({"error": "trakt_id and action ('add'|'remove') are required"}).encode())
             return
 
-        token = load_token()
+        token = trakt_client.load_token()
         if not token:
             print("  AVISO: .trakt_token.json não encontrado ou inválido.")
             self._respond(500, "application/json", json.dumps({"error": "no token"}).encode())
@@ -138,7 +134,7 @@ class Handler(BaseHTTPRequestHandler):
 
         body = {"movies": [{"ids": {"trakt": int(trakt_id)}}]}
         try:
-            result = trakt_call("POST", endpoint, token=token, body=body)
+            result = trakt_client.call("POST", endpoint, token=token, body=body)
             self._respond(200, "application/json", json.dumps({"ok": True, "result": result}).encode())
         except urllib.error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
@@ -170,7 +166,7 @@ def main():
     print(f"\n  Lista Trakt alvo: {slug}")
     print(f"  Circuit em http://localhost:{PORT}\n")
 
-    server = HTTPServer(("", PORT), Handler)
+    server = ThreadingHTTPServer(("", PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
