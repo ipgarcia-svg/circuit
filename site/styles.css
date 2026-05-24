@@ -1101,3 +1101,58 @@ details[open].misses-panel summary::before {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Buzz badge ──────────────────────────────────────────────────────────── */
+
+.buzz-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.buzz-badge.is-rising {
+  background: rgba(80, 180, 80, 0.18);
+  color: #4caf72;
+  border: 1px solid rgba(80, 180, 80, 0.25);
+}
+
+.buzz-badge.is-falling {
+  background: rgba(180, 80, 80, 0.12);
+  color: var(--muted);
+  border: 1px solid rgba(180, 80, 80, 0.15);
+  opacity: 0.6;
+}
+
+.buzz-badge.is-stable {
+  background: rgba(128, 128, 128, 0.1);
+  color: var(--muted);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  opacity: 0.5;
+}
+
+.buzz-badge.is-new {
+  background: rgba(39, 113, 122, 0.15);
+  color: var(--teal);
+  border: 1px solid rgba(39, 113, 122, 0.2);
+}
+
+#buzzButton {
+  background: transparent;
+  color: var(--teal);
+  border: 1px solid var(--teal);
+  font-size: 0.8rem;
+}
+
+#buzzButton:hover:not(:disabled) {
+  background: rgba(39, 113, 122, 0.1);
+}
+
+#buzzButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

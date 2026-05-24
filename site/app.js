@@ -52,6 +52,7 @@ const els = {
   missesCount: document.querySelector("#missesCount"),
   missesList: document.querySelector("#missesList"),
   rebuildButton: document.querySelector("#rebuildButton"),
+  buzzButton: document.querySelector("#buzzButton"),
 };
 
 const themeKey = "sundance-theme-v1";
@@ -208,6 +209,13 @@ function formatRuntime(minutes) {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return h ? `${h}h${String(m).padStart(2, "0")}` : `${m} min`;
+}
+
+function buzzArrow(trend) {
+  if (trend === "rising") return "↑";
+  if (trend === "falling") return "↓";
+  if (trend === "new") return "✦";
+  return "→";
 }
 
 function traktUrl(movie) {
@@ -404,6 +412,7 @@ function applyFilters() {
     if (state.filters.sort === "recent") return b.year - a.year || b.watch_score - a.watch_score;
     if (state.filters.sort === "runtime") return (a.runtime || 999) - (b.runtime || 999);
     if (state.filters.sort === "title") return a.title.localeCompare(b.title);
+    if (state.filters.sort === "buzz") return (b.buzz_score ?? -1) - (a.buzz_score ?? -1) || b.watch_score - a.watch_score;
     return b.watch_score - a.watch_score || b.rating - a.rating;
   });
 
@@ -667,6 +676,13 @@ function renderMovie(movie) {
   }
   node.querySelector("h2").textContent = movie.title;
   node.querySelector(".year").textContent = movie.year || "";
+  if (movie.buzz_score != null) {
+    const badge = document.createElement("span");
+    badge.className = `buzz-badge is-${movie.buzz_trend || "new"}`;
+    badge.title = `Buzz: ${movie.buzz_score}/100`;
+    badge.textContent = `${buzzArrow(movie.buzz_trend)} ${Math.round(movie.buzz_score)}`;
+    node.querySelector(".movie-title-row").append(badge);
+  }
   node.querySelector(".meta").textContent = [
     `${movie.rating}/10`,
     `${movie.votes.toLocaleString("pt-BR")} votos`,
@@ -783,6 +799,7 @@ function openMovieModal(movie) {
         ${detailRow("Ano", movie.year)}
         ${detailRow("Duração", formatRuntime(movie.runtime))}
         ${detailRow("Nota Trakt", `${movie.rating}/10`)}
+        ${movie.buzz_score != null ? detailRow("Buzz", `${movie.buzz_score}/100 ${buzzArrow(movie.buzz_trend)}`) : ""}
         ${detailRow("Votos", movie.votes.toLocaleString("pt-BR"))}
         ${detailRow("País", movie.country ? movie.country.toUpperCase() : "")}
         ${detailRow("Idioma", languageLabel(movie.language))}
@@ -1041,6 +1058,32 @@ function bind() {
       showSyncBanner("Sem conexão com o servidor local.");
     }
   });
+  els.buzzButton.addEventListener("click", async () => {
+    els.buzzButton.disabled = true;
+    els.buzzButton.textContent = "Coletando…";
+    try {
+      const res = await fetch("/api/buzz", { method: "POST" });
+      if (!res.ok) { showSyncBanner("Não foi possível iniciar a coleta de buzz."); return; }
+      const poll = setInterval(async () => {
+        const s = await fetch("/api/buzz-status").then((r) => r.json());
+        if (s.state === "running") return;
+        clearInterval(poll);
+        els.buzzButton.disabled = false;
+        els.buzzButton.textContent = "Atualizar buzz";
+        if (s.state === "done") {
+          await loadBuzz();
+          applyFilters();
+        } else {
+          showSyncBanner(`Erro ao coletar buzz: ${s.message}`);
+        }
+      }, 4000);
+    } catch {
+      els.buzzButton.disabled = false;
+      els.buzzButton.textContent = "Atualizar buzz";
+      showSyncBanner("Sem conexão com o servidor local.");
+    }
+  });
+
   els.reset.addEventListener("click", () => {
     state.filters = { search: "", lists: [], tags: [], genres: [], languages: [], runtime: "any", personal: "active", sort: "score" };
     state.activeMoods.clear();
@@ -1057,6 +1100,25 @@ function bind() {
     renderSpotlight(null);
     applyFilters();
   });
+}
+
+async function loadBuzz() {
+  try {
+    const res = await fetch("buzz.json");
+    if (!res.ok) return;
+    const data = await res.json();
+    const map = {};
+    (data.movies || []).forEach((b) => {
+      if (b.trakt) map[b.trakt] = b;
+    });
+    state.movies.forEach((m) => {
+      const b = map[m.trakt];
+      m.buzz_score = b ? b.buzz_score : null;
+      m.buzz_trend = b ? b.trend : null;
+    });
+  } catch {
+    // buzz.json ainda não existe — normal na primeira execução
+  }
 }
 
 async function syncFromTrakt(movies) {
@@ -1089,6 +1151,7 @@ async function boot() {
   loadFilters();
   await syncFromTrakt(payload.movies);
   state.movies = payload.movies;
+  await loadBuzz();
   if (payload.generated_at && els.dataFreshness) {
     const date = payload.generated_at.slice(0, 10);
     els.dataFreshness.textContent = `Dados de ${date}`;

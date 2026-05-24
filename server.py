@@ -38,6 +38,29 @@ SLUG_FILE   = PROJECT_DIR / ".trakt_list_slug"
 _rebuild_lock   = threading.Lock()
 _rebuild_status = {"state": "idle", "message": ""}
 
+_buzz_lock   = threading.Lock()
+_buzz_status = {"state": "idle", "message": ""}
+
+
+def _run_buzz():
+    global _buzz_status
+    script = PROJECT_DIR / "build_buzz.py"
+    try:
+        result = subprocess.run(
+            ["python3", str(script)],
+            capture_output=True, text=True, timeout=600,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        )
+        if result.returncode == 0:
+            last = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "Concluído."
+            _buzz_status = {"state": "done", "message": last}
+        else:
+            _buzz_status = {"state": "error", "message": result.stderr.strip() or "Erro desconhecido."}
+    except subprocess.TimeoutExpired:
+        _buzz_status = {"state": "error", "message": "Timeout após 10 minutos."}
+    except Exception as exc:
+        _buzz_status = {"state": "error", "message": str(exc)}
+
 
 def _run_rebuild():
     global _rebuild_status
@@ -84,6 +107,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/rebuild-status":
             self._respond(200, "application/json", json.dumps(_rebuild_status).encode())
+            return
+
+        if path == "/api/buzz-status":
+            self._respond(200, "application/json", json.dumps(_buzz_status).encode())
             return
 
         if path == "/":
@@ -139,7 +166,21 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._respond(502, "application/json", json.dumps({"error": str(exc)}).encode())
 
+    def _handle_buzz(self):
+        global _buzz_status
+        if not _buzz_lock.acquire(blocking=False):
+            self._respond(409, "application/json", json.dumps({"error": "already running"}).encode())
+            return
+        _buzz_status = {"state": "running", "message": "Coletando sinais de tração…"}
+        t = threading.Thread(target=lambda: (_run_buzz(), _buzz_lock.release()), daemon=True)
+        t.start()
+        self._respond(202, "application/json", json.dumps({"ok": True}).encode())
+
     def do_POST(self):
+        if self.path == "/api/buzz":
+            self._handle_buzz()
+            return
+
         if self.path == "/api/rebuild":
             self._handle_rebuild()
             return
